@@ -1,0 +1,43 @@
+---
+title: "HW6"
+format: html
+editor: visual
+---
+
+## Stats 506 Homework 6
+
+Margaret Miles
+
+## Problem #2: **data.table**
+
+Repeat problem set 4, question 2, using data.table.
+
+You can make the same or different decision as you did last time. You can also use or ignore the decisions I made in the solutions. As before, there is no “correct” answer (including those in the problem set 4 solutions).
+
+Use the tidyverse for this problem. In particular, use piping and dplyr as much as you are able. Note: Use of any deprecated functions will result in a point loss.
+
+Use the “ATP Matches” data from 2019 available at https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_2019.csv. This data tracks all Tennis matches. This data does not have documentation, so you’ll have to explore the data yourself to figure out it’s structure. Use it to answer the following questions. Your answers should show both the output from R that allows you to answer it, as well as a written answer.
+
+a. How many tournaments took place in 2019?
+
+```{r}
+
+```
+
+b. Did any player win more than one tournament? If so, how many players won more than one tournament, and how many tournaments did the most winning player(s) win?
+
+```{r}
+
+```
+
+c. Is there any evidence that winners have more aces than losers? (If you address this with a hypothesis test, do not use base R functionality - continue to remain in the Tidyverse.)
+
+```{r}
+
+```
+
+d. Identify the player(s) with the highest win-rate. (Note that this is NOT asking for the highest number of wins.) Restrict to players with at least 5 matches.
+
+```{r}
+
+```
