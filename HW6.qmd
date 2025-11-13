@@ -18,26 +18,114 @@ Use the tidyverse for this problem. In particular, use piping and dplyr as much 
 
 Use the “ATP Matches” data from 2019 available at https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_2019.csv. This data tracks all Tennis matches. This data does not have documentation, so you’ll have to explore the data yourself to figure out it’s structure. Use it to answer the following questions. Your answers should show both the output from R that allows you to answer it, as well as a written answer.
 
+```{r}
+tennis_matches <- read.csv("atp_matches_2019.csv")
+library(skimr)
+skim(tennis_matches)
+
+library(data.table)
+# Convert to data.table
+setDT(tennis_matches)
+
+```
+
 a. How many tournaments took place in 2019?
 
 ```{r}
+# Convert date and extract year
+tennis_matches[, tourney_date := as.character(tourney_date)]
+tennis_matches[, year := as.numeric(substr(tourney_date, 1, 4))]
+
+table(tennis_matches[,year])
+
+
+# there are a lot of davis cups, combine them into one
+tourney_2019_davis <- tennis_matches[year == 2019 & grepl("Davis", tourney_name, ignore.case = TRUE)]
+davis_tourneys <- uniqueN(tourney_2019_davis$tourney_id)  # n_distinct equivalent
+
+# now tournaments took place in 2019
+tourn_2019 <- tennis_matches[year == 2019]
+tot_tourneys <- uniqueN(tourn_2019$tourney_id)
+
+# remove all but one davis tourney ID 
+total_2019 <- tot_tourneys - davis_tourneys + 1
+
+print(total_2019)
 
 ```
+
+**Based on my R code, there were 66 tourneys in 2019.** 
 
 b. Did any player win more than one tournament? If so, how many players won more than one tournament, and how many tournaments did the most winning player(s) win?
 
 ```{r}
+# pull final round
+finals <- tennis_matches[round == "F"]
+
+# Count number of tournaments won per player
+winner_counts <- finals[, .(tournaments_won = uniqueN(tourney_id)), by = winner_name]
+
+# number of players that won 1< tournaments
+multi_winners <- nrow(winner_counts[tournaments_won > 1])
+
+# most winning player
+top_winners <- winner_counts[tournaments_won == max(winner_counts$tournaments_won)]
 
 ```
+
+**Assuming that every tourney has only one winner which is the winner of round "F" for final, and all tourneys have a distinct ID, there were 41 winners of tournaments, there were 12 winners with more than 1 win, and Dominic Thiem and Novak Djokovic won the most with 5.**
 
 c. Is there any evidence that winners have more aces than losers? (If you address this with a hypothesis test, do not use base R functionality - continue to remain in the Tidyverse.)
 
 ```{r}
+# pull win aces 
+win_aces <- tennis_matches[, .(total_aces = sum(w_ace, na.rm = TRUE)),
+                           by = winner_name]
+win_aces[, role := "Winner"]
+lose_aces <- tennis_matches[, .(total_aces = sum(l_ace, na.rm = TRUE)),
+                           by = loser_name]
+lose_aces[, role := "Loser"]
+
+# Rename player columns to match
+setnames(win_aces, "winner_name", "player")
+setnames(lose_aces, "loser_name", "player")
+
+
+# Combine winners and losers
+aces_combined <- rbindlist(list(win_aces, lose_aces))
+
+aces_combined
+
+# hypothesis test
+t.test(total_aces ~ role, data = aces_combined)
 
 ```
+**The mean number of aces for winners was higher than for losers. The two-sample t-test gives a p-value of p = 8.07e-6, suggesting that there is significant evidence that winners serve more aces than losers.**
 
 d. Identify the player(s) with the highest win-rate. (Note that this is NOT asking for the highest number of wins.) Restrict to players with at least 5 matches.
 
 ```{r}
+# find total wins for each person
+total_wins <- tennis_matches[, .(wins = .N), by = winner_name]
 
+# total losses
+total_losses <- tennis_matches[, .(losses = .N), by = loser_name]
+
+
+# Aggregate wins losses to find matches per player
+setnames(total_wins, "winner_name", "player")
+setnames(total_losses, "loser_name", "player")
+player_stats <- merge(total_wins, total_losses, by = "player", all = TRUE)
+player_stats[, matches_played := wins + losses]
+
+# now find rate
+player_stats[, win_rate := wins / matches_played]
+
+# Restrict to players with at least 5 matches
+player_stats_5 <- player_stats[matches_played >= 5]
+
+# find players with highest win rates
+top_players <- player_stats_5[win_rate == max(win_rate)]
+
+top_players
 ```
