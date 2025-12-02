@@ -72,15 +72,8 @@ The booststrapWaldCI constructor should take in a data set and a function that r
 
 makeBootstrapCI(function(x) mean(x\$myvar), data = mydata, reps = 100)
 
-```{r}
-
-```
-
 Add an optional level argument and an optional compute argument that accepts either “serial” (using no parallel processing), “parallel” (using either forks or sockets from parallel).
 
-```{r}
-
-```
 
 The constructor should carry out the bootstrap using the requested compute approach. Most functions can be inherited from waldCI, but add the additional function rebootstrap that performs a new bootstrap. rebootstrap should only take in one argument of a bootstrapWaldCI object.
 
@@ -88,12 +81,20 @@ Note: Be careful with inheritance and S4:
 
 The \@.Data slot only applies if the child class contains an S3 class; if it contains S4, it simply adds the childs slots alongside the parent slots. Slot names should not be re-used unless you’re explicltly overwriting existing slots.
 
+```{r}
+
+```
+
 b.  Show your code works by executing the following:
 
 ci1 \<- makeBootstrapCI(function(x) mean(x\$y), ggplot2::diamonds, reps = 1000) ci1 rebootstrap(ci1)
 
 ```{r}
-
+ci1 <- makeBootstrapCI(function(x) mean(x$y),
+                       ggplot2::diamonds,
+                       reps = 1000)
+ci1
+rebootstrap(ci1)
 ```
 
 Compare and comment on the performance of the two compute methods.
@@ -102,12 +103,22 @@ Compare and comment on the performance of the two compute methods.
 
 ```
 
-c.  Write a function called dispCoef that takes in data (based upon mtcars; it must take in a generic data for the bootstrap) and fits the model: mpg \~ cyl + disp + wt. It should return the coefficient associated with disp. Execute the following:
+c.  Write a function called dispCoef that takes in data (based upon mtcars; it must take in a generic data for the bootstrap) and fits the model: mpg \~ cyl + disp + wt. It should return the coefficient associated with disp. 
+
+```{r}
+
+```
+
+Execute the following:
 
 ci2 \<- makeBootstrapCI(dispCoef, mtcars, reps = 1000) ci2 rebootstrap(ci2)
 
 ```{r}
-
+ci2 <- makeBootstrapCI(dispCoef,
+                       mtcars,
+                       reps = 1000)
+ci2
+rebootstrap(ci2)
 ```
 
 Compare and comment on the performance of the two compute methods.
@@ -120,18 +131,166 @@ Compare and comment on the performance of the two compute methods.
 
 Generate artificial data by running the code in this script. Do not include this script in your submitted PDF; either use source() or save/load to get the data into R.
 
+```{r}
+# Load data-generating script
+source("Problem3data.R")
+
+# Assuming the script creates an object called 'bigdat' or similar
+str(df)
+```
+
 a.  Fit one model per country. Fit a mixed effects logistic regression model, predicting course completion based upon prior GPA, number of forum posts, number of quiz attempts, and a random effect for device type. Standardize the predictors within each country. Generate some sort of visualization of the estimated coefficients for number of forum posts in each country.
+
+```{r}
+library(dplyr)
+library(lme4)
+library(purrr)
+library(tidyr)
+library(ggplot2)
+
+# fit one model per country
+data_list <- split(df, df$country)
+
+# fit mixed effects logistic regression model
+# predicting course completion based upon prior GPA, number of forum posts, number of quiz attempts, and a random effect for device type.
+model_country <- function(dat) {
+  # standardize each variable
+  dat <- dat %>%
+    mutate(
+      #prior gpa
+      std_gpa = scale(prior_gpa),
+      #number of forum posts
+      std_posts = scale(forum_posts),
+      #number of quiz attempts
+      std_attempt = scale(quiz_attempts)
+    )
+  
+  # logistic regression with device time random effect
+  glmer(
+    completed_course ~ std_gpa + std_posts + std_attempt + (1 | device_type),
+    data = dat,
+    family = binomial(link = "logit")
+  )
+}
+
+model1 <- model_country(data_list[[1]])
+model2 <- model_country(data_list[[2]])
+model3 <- model_country(data_list[[3]])
+model4 <- model_country(data_list[[4]])
+model5 <- model_country(data_list[[5]])
+model6 <- model_country(data_list[[6]])
+
+#plot estimated coefficients for number of forum posts in each country
+
+# extract std_posts coefficient and std error
+models <- list(model1, model2, model3, model4, model5, model6)
+posts_coef <- data.frame(
+  country = c("Germany","India","Lithuania","Nigeria","Other",
+              "US"),
+  coef = numeric(6),
+  se = numeric(6)
+)
+
+for(i in 1:6){
+  posts_coef$coef[i] <- fixef(models[[i]])["std_posts"]     
+  posts_coef$se[i] <- sqrt(diag(vcov(models[[i]])))["std_posts"]
+}
+posts_coef
+
+library(ggplot2)
+
+ggplot(posts_coef, aes(x = country, y = coef)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = coef - 2*se, ymax = coef + 2*se), width = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "Effect of Forum Posts on Course Completion by Country",
+    y = "Log-odds coefficient (standardized)",
+    x = "Country"
+  )
+```
 
 Report the running time (from system.time) for each of the 6 models.
 
 ```{r}
+# fit models with run times
+run1 <- system.time({
+  model1 <- model_country(data_list[[1]])
+})
+run2 <- system.time({
+  model2 <- model_country(data_list[[2]])
+})
+run3 <- system.time({
+  model3 <- model_country(data_list[[3]])
+})
+run4 <- system.time({
+  model4 <- model_country(data_list[[4]])
+})
+run5 <- system.time({
+  model5 <- model_country(data_list[[5]])
+})
+run6 <- system.time({
+  model6 <- model_country(data_list[[6]])
+})
+print(as.character(data_list[[1]]$country[1]))
+run1
+print(as.character(data_list[[2]]$country[1]))
+run2
+print(as.character(data_list[[3]]$country[1]))
+run3
+print(as.character(data_list[[4]]$country[1]))
+run4
+print(as.character(data_list[[5]]$country[1]))
+run5
+print(as.character(data_list[[6]]$country[1]))
+run6
 
 ```
 
 b.  Devise an approach that minimizes the running time of your script. Report the running time of your entire script (running models and estimating coefficients; no need for a new plot). Do not use a different package for the models. Show that the results match those from part a).
 
 ```{r}
+library(dplyr)
+library(lme4)
+library(purrr)
 
+# Split data by country
+data_list <- split(df, df$country)
+
+fit_country <- function(dat) {
+  dat <- dat %>%
+    mutate(
+      std_gpa = scale(prior_gpa),
+      std_posts = scale(forum_posts),
+      std_attempt = scale(quiz_attempts)
+    )
+  
+  glmer(
+    completed_course ~ std_gpa + std_posts + std_attempt + (1 | device_type),
+    data = dat,
+    family = binomial(link = "logit")
+  )
+}
+
+time2 <- system.time({
+  # Fit all 6 models in one line using map
+  models <- map(data_list, fit_country)
+  
+  # Extract std_posts coefficient and SE
+  coef_df <- map_df(
+    names(models),
+    ~ tibble(
+        country = .x,
+        std_posts_coef = fixef(models[[.x]])["std_posts"],
+        std_posts_se   = sqrt(diag(vcov(models[[.x]])))["std_posts"]
+    )
+  )
+  coef_df
+})
+
+# time of faster version
+print("Time of faster version: ")
+time2
 ```
 
 ## Problem #4: **data.table**
