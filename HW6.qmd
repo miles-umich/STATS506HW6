@@ -64,7 +64,7 @@ C_moment(v, 4)       # fourth central moment
 moment(v, order=4, center=TRUE)
 ```
 
-## Problem #2:Expanding on waldCI
+## Problem #2: Expanding on waldCI
 
 a.  Write a class bootstrapWaldCI that produces a CI using bootstrap, similar to waldCI. It should inherit from waldCI using either the version from the solutions or your version - in either case, include the relevant code in this homework by using source() on a file containing the waldCI code.
 
@@ -74,7 +74,6 @@ makeBootstrapCI(function(x) mean(x\$myvar), data = mydata, reps = 100)
 
 Add an optional level argument and an optional compute argument that accepts either “serial” (using no parallel processing), “parallel” (using either forks or sockets from parallel).
 
-
 The constructor should carry out the bootstrap using the requested compute approach. Most functions can be inherited from waldCI, but add the additional function rebootstrap that performs a new bootstrap. rebootstrap should only take in one argument of a bootstrapWaldCI object.
 
 Note: Be careful with inheritance and S4:
@@ -82,7 +81,154 @@ Note: Be careful with inheritance and S4:
 The \@.Data slot only applies if the child class contains an S3 class; if it contains S4, it simply adds the childs slots alongside the parent slots. Slot names should not be re-used unless you’re explicltly overwriting existing slots.
 
 ```{r}
+source("waldCI.R")
+library(parallel)
 
+#create a new bootstrapWaldCI object based on waldCI
+setClass(
+  "bootstrapWaldCI",
+  contains = "waldCI",   # inherit level, mean, sterr and methods
+  slots = c(
+    bootStats = "numeric",   # bootstrap statistics
+    reps      = "integer",   # number of resamples
+    compute   = "character", # "serial" or "parallel"
+    statFun   = "function",  # function used to compute stat
+    data      = "ANY"        # original data
+  )
+)
+
+# serial bootstrap method
+.bootstrap_serial <- function(statFun, data, reps) {
+  n <- NROW(data)
+  out <- numeric(reps)
+
+  for (i in seq_len(reps)) {
+    idx <- sample.int(n, size = n, replace = TRUE)
+    out[i] <- statFun(data[idx, , drop = FALSE])
+  }
+
+  out
+}
+
+# parallel bootstrap method
+.bootstrap_parallel <- function(statFun, data, reps) {
+  if (!requireNamespace("parallel", quietly = TRUE)) {
+    stop("Package 'parallel' is required for compute = 'parallel'.")
+  }
+
+  n  <- NROW(data)
+  cl <- parallel::makeCluster(parallel::detectCores())
+  on.exit(parallel::stopCluster(cl), add = TRUE)
+
+  parallel::clusterExport(
+    cl,
+    varlist = c("data", "statFun", "n"),
+    envir   = environment()
+  )
+
+  res <- parallel::parLapply(
+    cl,
+    X = seq_len(reps),
+    fun = function(i) {
+      idx <- sample.int(n, size = n, replace = TRUE)
+      statFun(data[idx, , drop = FALSE])
+    }
+  )
+
+  unlist(res, use.names = FALSE)
+}
+
+# constructor
+makeBootstrapCI <- function(statFun,
+                            data,
+                            reps    = 100L,
+                            level   = 0.95,
+                            compute = c("serial", "parallel")) {
+  stopifnot(is.function(statFun))
+  compute <- match.arg(compute)
+  reps    <- as.integer(reps)
+
+  ## original estimate on full data
+  est <- statFun(data)
+
+  ## bootstrap
+  bootStats <- switch(
+    compute,
+    serial   = .bootstrap_serial(statFun, data, reps),
+    parallel = .bootstrap_parallel(statFun, data, reps)
+  )
+
+  se_boot <- sd(bootStats)
+
+  ## build child object 
+  obj <- new("bootstrapWaldCI",
+             level    = level,
+             mean     = est,
+             sterr    = se_boot,
+             bootStats = bootStats,
+             reps      = reps,
+             compute   = compute,
+             statFun   = statFun,
+             data      = data)
+
+  validObject(obj)
+  obj
+}
+
+# show method for bootstrapWaldCI
+setMethod(
+  "show",
+  "bootstrapWaldCI",
+  function(object) {
+    ## parent show: prints "X% CI: (lb, ub)"
+    callNextMethod()
+
+    cat("Bootstrap reps:", object@reps, "\n")
+    cat("Compute mode:  ", object@compute, "\n", sep = "")
+    invisible(object)
+  }
+)
+
+setGeneric(
+  "rebootstrap",
+  function(object) standardGeneric("rebootstrap")
+)
+
+## define method for bootstrapWaldCI
+setMethod(
+  "rebootstrap",
+  "bootstrapWaldCI",
+  function(object) {
+    statFun <- object@statFun
+    data    <- object@data
+    reps    <- object@reps
+    compute <- object@compute
+    level   <- object@level
+
+    ## recompute original estimate on full data
+    est <- statFun(data)
+
+    ## new bootstrap run
+    bootStats <- switch(
+      compute,
+      serial   = .bootstrap_serial(statFun, data, reps),
+      parallel = .bootstrap_parallel(statFun, data, reps)
+    )
+
+    se_boot <- sd(bootStats)
+
+    ## update *parent* slots (waldCI)
+    object@mean  <- est
+    object@sterr <- se_boot
+    object@level <- level
+
+    ## update *child* slots
+    object@bootStats <- bootStats
+
+    validObject(object)
+    object
+  }
+)
 ```
 
 b.  Show your code works by executing the following:
@@ -100,13 +246,36 @@ rebootstrap(ci1)
 Compare and comment on the performance of the two compute methods.
 
 ```{r}
+## Serial
+system.time(
+  ci1_serial <- makeBootstrapCI(
+    function(x) mean(x$y),
+    data    = ggplot2::diamonds,
+    reps    = 1000,
+    compute = "serial"
+  )
+)
 
+## Parallel
+system.time(
+  ci1_parallel <- makeBootstrapCI(
+    function(x) mean(x$y),
+    data    = ggplot2::diamonds,
+    reps    = 1000,
+    compute = "parallel"
+  )
+)
 ```
+**Since this is just a mean and only 1000 reps, the serial is faster because it doesn't need that extra time to set up the parrallel processing.**
 
-c.  Write a function called dispCoef that takes in data (based upon mtcars; it must take in a generic data for the bootstrap) and fits the model: mpg \~ cyl + disp + wt. It should return the coefficient associated with disp. 
+
+c.  Write a function called dispCoef that takes in data (based upon mtcars; it must take in a generic data for the bootstrap) and fits the model: mpg \~ cyl + disp + wt. It should return the coefficient associated with disp.
 
 ```{r}
-
+dispCoef <- function(data) {
+  fit <- lm(mpg ~ cyl + disp + wt, data = data)
+  coef(fit)[["disp"]]
+}
 ```
 
 Execute the following:
@@ -124,8 +293,30 @@ rebootstrap(ci2)
 Compare and comment on the performance of the two compute methods.
 
 ```{r}
+## Serial
+system.time(
+  ci2_serial <- makeBootstrapCI(
+    dispCoef,
+    data    = mtcars,
+    reps    = 100000,
+    compute = "serial"
+  )
+)
+
+## Parallel
+system.time(
+  ci2_parallel <- makeBootstrapCI(
+    dispCoef,
+    data    = mtcars,
+    reps    = 100000,
+    compute = "parallel"
+  )
+)
 
 ```
+**When it was only 1,000 reps the series and parrallel were comprable but similar because the regression just takes longer than a mean. But when I upped the process to 100,000 runs you can see that parrallel is just significantly faster than series.** 
+
+
 
 ## Problem #3: Large data
 
